@@ -1,0 +1,37 @@
+name: supabase-keepalive
+
+# Supabase 免费项目连续 7 天没有请求会被自动暂停。
+# 这个工作流每两天查一次 keepalive 表，让项目保持活跃。
+# 需要在仓库 Settings → Secrets and variables → Actions 里添加：
+#   SUPABASE_URL       例如 https://xxxx.supabase.co
+#   SUPABASE_ANON_KEY  Supabase 项目的 anon public key
+#
+# 注意：GitHub 会在仓库连续 60 天没有任何提交时停用定时工作流，
+# 到时候在 Actions 页面点一次 “Enable workflow” 即可。
+
+on:
+  schedule:
+    - cron: '17 3 */2 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping keepalive table
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "缺少 SUPABASE_URL / SUPABASE_ANON_KEY secrets，跳过。"
+            exit 0
+          fi
+          curl -fsS "$SUPABASE_URL/rest/v1/keepalive?select=touched_at&id=eq.1" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY"
+          echo
+          echo "keepalive ok"

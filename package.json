@@ -1,0 +1,14 @@
+{
+  "name": "gaofei-jilu",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "稿费记录 · 本地优先的接单稿费 App（PWA + Supabase 免费同步）",
+  "scripts": {
+    "start": "python -m http.server 4173",
+    "test": "node --test tests/lib.test.js tests/sync.test.js tests/seed.test.js",
+    "check": "node --check lib.js && node --check sync.js && node --check app.js && node --check sw.js && node --check config.js && node --check scripts/seed_cloud.mjs",
+    "seed": "python scripts/import_xlsx.py",
+    "verify": "python scripts/verify_seed.py"
+  }
+}
