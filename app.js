@@ -250,6 +250,8 @@ function hideToast() {
 /* 弹层                                                                */
 /* ------------------------------------------------------------------ */
 
+let sheetOpenedAt = 0;
+
 function openSheet({ title, body, foot = '', onMount = null }) {
   closeSheet(true);
   const node = document.createElement('div');
@@ -266,6 +268,7 @@ function openSheet({ title, body, foot = '', onMount = null }) {
       ${foot ? `<div class="sheet-foot">${foot}</div>` : ''}
     </div>`;
   sheetRoot.appendChild(node);
+  sheetOpenedAt = Date.now();
   requestAnimationFrame(() => node.classList.add('is-open'));
   document.body.style.overflow = 'hidden';
   ui.sheet = node;
@@ -1661,12 +1664,29 @@ document.addEventListener('click', async event => {
     switchTab(tab.dataset.tab);
     return;
   }
+
+  const recordEl = event.target.closest('.record');
+  if (recordEl && !event.target.closest('.record-delete')) {
+    if (recordEl.classList.contains('is-open')) {
+      recordEl.classList.remove('is-open');
+      return;
+    }
+    const wrap = recordEl.closest('.record-wrap');
+    if (wrap) {
+      const id = wrap.dataset.id;
+      if (ui.selection) toggleSelection(id);
+      else openDetail(id);
+      return;
+    }
+  }
+
   const actionEl = event.target.closest('[data-action]');
   if (!actionEl) return;
   const action = actionEl.dataset.action;
 
   switch (action) {
     case 'close-sheet':
+      if (Date.now() - sheetOpenedAt < 260) break;
       closeSheet();
       break;
     case 'toast-action':
@@ -1987,7 +2007,11 @@ function bulkComplete() {
 
 let gesture = null;
 let pressTimer = null;
-let suppressClick = false;
+let suppressClickUntil = 0;
+
+function suppressClicks(ms = 150) {
+  suppressClickUntil = Date.now() + ms;
+}
 
 document.addEventListener('pointerdown', event => {
   const record = event.target.closest('.record');
@@ -2010,6 +2034,7 @@ document.addEventListener('pointerdown', event => {
     const id = wrap.dataset.id;
     if (!ui.selection) {
       ui.selection = new Set([id]);
+      suppressClicks(600);
       if (navigator.vibrate) navigator.vibrate(8);
       render();
     }
@@ -2036,18 +2061,12 @@ document.addEventListener('pointermove', event => {
 document.addEventListener('pointerup', () => {
   clearTimeout(pressTimer);
   if (!gesture) return;
-  const { record, dx, active, wrap } = gesture;
+  const { record, dx, active } = gesture;
   record.style.transition = '';
   record.style.transform = '';
   if (active) {
-    const shouldOpen = dx < -52;
-    record.classList.toggle('is-open', shouldOpen);
-    suppressClick = true;
-    setTimeout(() => { suppressClick = false; }, 60);
-  } else if (!gesture.moved) {
-    const id = wrap.dataset.id;
-    if (ui.selection) toggleSelection(id);
-    else openDetail(id);
+    record.classList.toggle('is-open', dx < -52);
+    suppressClicks(180);
   }
   gesture = null;
 });
@@ -2062,7 +2081,7 @@ document.addEventListener('pointercancel', () => {
 });
 
 document.addEventListener('click', event => {
-  if (suppressClick) {
+  if (Date.now() < suppressClickUntil) {
     event.stopPropagation();
     event.preventDefault();
   }

@@ -217,6 +217,8 @@ Supabase 免费项目连续 **7 天没有任何请求**会被自动暂停（数�
 
 无构建、无依赖：`index.html + styles.css + app.js + lib.js + sync.js + config.js`。
 
+> 改动前端文件后，记得把 `sw.js` 里的 `CACHE = 'gaofei-vN'` 版本号 +1 再推送，否则已安装的 App 会一直用旧缓存；App 检测到新版本会提示「有新版本，点击刷新」。
+
 ```powershell
 npm run check                # 全部 JS 语法检查
 npm test                     # 纯逻辑单测（lib / sync / seed）
