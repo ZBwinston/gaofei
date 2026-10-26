@@ -143,8 +143,8 @@ function readCloudConfig() {
   try {
     saved = JSON.parse(localStorage.getItem(CLOUD_KEY) || 'null');
   } catch { /* ignore */ }
-  const url = String(saved?.url || SUPABASE_URL || '').trim();
-  const key = String(saved?.key || SUPABASE_ANON_KEY || '').trim();
+  const url = String(SUPABASE_URL || saved?.url || '').trim();
+  const key = String(SUPABASE_ANON_KEY || saved?.key || '').trim();
   return { url, key };
 }
 

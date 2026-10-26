@@ -133,14 +133,11 @@ node scripts/seed_cloud.mjs --url https://xxxx.supabase.co --key <anon-key> `
 > 免费账号的 GitHub Pages 只支持**公开仓库**。本项目里没有任何稿费数据（数据在 Supabase 和你本机），公开代码是安全的。
 
 1. 在 GitHub 新建一个**公开**仓库，例如 `gaofei`
-2. 在本目录推送：
+2. 本目录已经初始化好 Git 并提交过一次，直接关联远程仓库推送：
 
 ```powershell
-git init
-git add .
-git commit -m "稿费记录 v1"
-git branch -M main
 git remote add origin https://github.com/<你的用户名>/gaofei.git
+git branch -M main
 git push -u origin main
 ```
 
