@@ -189,8 +189,14 @@ export function createState() {
     records: [],
     settings: { theme: 'system', lastBackupAt: '', onboarded: false },
     sync: {
-      lastPulledServerAt: '', lastSyncedAt: '', dirty: [],
-      platformDirty: false, userId: '', email: ''
+      lastPulledServerAt: '',
+      recordsCursor: '',
+      platformsCursor: '',
+      lastSyncedAt: '',
+      dirty: [],
+      platformDirty: false,
+      userId: '',
+      email: ''
     }
   };
 }
@@ -243,6 +249,8 @@ export function normalizeState(value) {
     },
     sync: {
       lastPulledServerAt: value.sync?.lastPulledServerAt || '',
+      recordsCursor: value.sync?.recordsCursor || value.sync?.lastPulledServerAt || '',
+      platformsCursor: value.sync?.platformsCursor || value.sync?.lastPulledServerAt || '',
       lastSyncedAt: value.sync?.lastSyncedAt || '',
       dirty: [...new Set(dirty)],
       platformDirty: Boolean(value.sync?.platformDirty),
@@ -281,23 +289,31 @@ export function inferReceived(record) {
 /* ---------------- 统计 ---------------- */
 
 export function computeStats(records) {
+  const toCents = n => Math.round((Number(n) || 0) * 100);
+  const fromCents = c => Math.round(c) / 100;
+
   const list = records.filter(record => !record.deletedAt);
   const withReceived = list.filter(record => record.received !== null && record.received !== undefined);
-  const sum = key => list.reduce((total, record) => total + (Number(record[key]) || 0), 0);
-  const received = withReceived.reduce((total, record) => total + Number(record.received || 0), 0);
-  const commission = sum('commission');
-  const diff = withReceived.reduce(
-    (total, record) => total + (Number(record.commission) || 0) - (Number(record.received) || 0),
+  const commissionCents = list.reduce((total, record) => total + toCents(record.commission), 0);
+  const receivedCents = withReceived.reduce((total, record) => total + toCents(record.received), 0);
+  const diffCents = withReceived.reduce(
+    (total, record) => total + toCents(record.commission) - toCents(record.received),
     0
   );
+  const pendingList = list.filter(record => record.received === null || record.received === undefined);
+  const pendingCommissionCents = pendingList.reduce((total, record) => total + toCents(record.commission), 0);
+
+  const received = fromCents(receivedCents);
+  const commission = fromCents(commissionCents);
+  const diff = fromCents(diffCents);
+
   return {
     count: list.length,
     commission,
     received,
     diff,
-    pendingCount: list.length - withReceived.length,
-    pendingCommission: list.filter(record => record.received === null || record.received === undefined)
-      .reduce((total, record) => total + Number(record.commission || 0), 0),
+    pendingCount: pendingList.length,
+    pendingCommission: fromCents(pendingCommissionCents),
     inferredCount: withReceived.filter(record => record.receivedInferred).length,
     doneCount: list.filter(record => record.status === '已完成').length,
     activeCount: list.filter(record => ['进行中', '待修改', '待确认'].includes(record.status)).length,
@@ -431,8 +447,16 @@ export function recordsInPeriod(records, period, now = new Date()) {
 
 export function previousPeriodStats(records, period, now = new Date()) {
   if (period === 'month') {
-    const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    return computeStats(recordsInPeriod(records, 'month', prev));
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const lastDate = new Date(year, month, 0);
+    const prevYear = lastDate.getFullYear();
+    const prevMonth = lastDate.getMonth() + 1;
+    const lastDay = lastDate.getDate();
+    const pad = n => String(n).padStart(2, '0');
+    const startDate = `${prevYear}-${pad(prevMonth)}-01`;
+    const endDate = `${prevYear}-${pad(prevMonth)}-${pad(lastDay)}`;
+    return computeStats(filterRecords(records, { startDate, endDate }));
   }
   if (period === 'year') {
     const year = now.getFullYear() - 1;

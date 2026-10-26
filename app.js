@@ -204,6 +204,8 @@ async function runSync({ manual = false } = {}) {
     state.sync.dirty = result.dirty;
     state.sync.platformDirty = result.platformDirty;
     state.sync.lastPulledServerAt = result.cursor;
+    state.sync.recordsCursor = result.recordsCursor || result.cursor;
+    state.sync.platformsCursor = result.platformsCursor || result.cursor;
     state.sync.lastSyncedAt = result.syncedAt;
     ui.lastSyncAt = result.syncedAt;
     persist();
@@ -2027,7 +2029,8 @@ document.addEventListener('pointerdown', event => {
     startY: event.clientY,
     dx: 0,
     active: false,
-    moved: false
+    moved: false,
+    axis: null
   };
   clearTimeout(pressTimer);
   pressTimer = setTimeout(() => {
@@ -2047,11 +2050,25 @@ document.addEventListener('pointermove', event => {
   if (!gesture) return;
   const dx = event.clientX - gesture.startX;
   const dy = event.clientY - gesture.startY;
-  if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+  const absX = Math.abs(dx);
+  const absY = Math.abs(dy);
+
+  if (absX > 8 || absY > 8) {
     gesture.moved = true;
     clearTimeout(pressTimer);
   }
-  if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 6) {
+
+  // 判定并锁定手势轴向：若主要是垂直滚动，直接锁定为 y，避免横向抖动冲突
+  if (!gesture.axis && (absX > 10 || absY > 10)) {
+    if (absY >= absX) {
+      gesture.axis = 'y';
+    } else if (absX > absY * 1.4) {
+      gesture.axis = 'x';
+    }
+  }
+
+  // 仅在明确处于横向滑动意图时驱动位移
+  if (gesture.axis === 'x') {
     gesture.active = true;
     gesture.dx = Math.min(0, Math.max(-96, dx));
     gesture.record.style.transition = 'none';
@@ -2200,6 +2217,8 @@ function registerServiceWorker() {
   });
 }
 
+let pollInterval = null;
+
 async function boot() {
   applyTheme();
   applyThemeMeta();
@@ -2211,7 +2230,7 @@ async function boot() {
   if (!new URLSearchParams(location.search).has('dev')) registerServiceWorker();
   setTimeout(() => $('#boot')?.classList.add('is-hidden'), 420);
   if (isLoggedIn()) runSync();
-  setInterval(() => {
+  pollInterval = setInterval(() => {
     if (document.visibilityState === 'visible' && isLoggedIn()) {
       const last = new Date(state.sync.lastSyncedAt || 0).getTime();
       if (Date.now() - last > 90_000) runSync();
@@ -2221,12 +2240,14 @@ async function boot() {
 
 boot();
 
-// 让测试/调试可以拿到内部状态
+// 让测试/调试可以拿到内部状态与控制定时器
 window.__gaofei = {
   get state() { return state; },
   ui,
   render,
   openRecordForm,
   openDetail,
-  openSheetQuery: openSheetFromQuery
+  openSheetQuery: openSheetFromQuery,
+  get pollInterval() { return pollInterval; },
+  stopPolling: () => { clearInterval(pollInterval); pollInterval = null; }
 };

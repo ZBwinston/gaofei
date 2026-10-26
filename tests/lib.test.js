@@ -203,25 +203,50 @@ test('CSV 导出带 BOM 与表头', () => {
   assert.match(csv, /自动全额/);
 });
 
-test('normalizeState 去重 ID 并补齐平台', () => {
+test('normalizeState 去重 ID 并补齐平台并保持独立游标', () => {
   const state = normalizeState({
     platforms: [{ id: 'plat-custom', name: '新平台' }],
     records: [
       { id: 'dup', platformId: 'plat-custom', orderedAt: '2025-01-02', title: 'A' },
       { id: 'dup', platformId: 'plat-custom', orderedAt: '2025-01-03', title: 'B' }
-    ]
+    ],
+    sync: {
+      recordsCursor: '2026-10-01T00:00:00Z',
+      platformsCursor: '2026-10-02T00:00:00Z'
+    }
   });
   assert.equal(state.records.length, 1);
   assert.equal(state.platforms.length, 5);
   assert.ok(state.platforms.some(item => item.id === 'plat-custom'));
+  assert.equal(state.sync.recordsCursor, '2026-10-01T00:00:00Z');
+  assert.equal(state.sync.platformsCursor, '2026-10-02T00:00:00Z');
 });
 
-test('周期区间与上期统计', () => {
+test('周期区间与上期统计完整覆盖上月全月及跨年', () => {
   const now = new Date('2026-10-26T12:00:00');
   assert.equal(todayISO(now), '2026-10-26');
-  const records = [sample({ id: 'a', orderedAt: '2026-10-13' })];
+
+  const records = [
+    sample({ id: 'a', orderedAt: '2026-10-13', commission: 100, received: 100 }),
+    sample({ id: 'sep-1', orderedAt: '2026-09-01', commission: 50, received: 50 }),
+    sample({ id: 'sep-15', orderedAt: '2026-09-15', commission: 60, received: 60 }),
+    sample({ id: 'sep-30', orderedAt: '2026-09-30', commission: 70, received: 70 }),
+    sample({ id: 'aug-31', orderedAt: '2026-08-31', commission: 80, received: 80 })
+  ];
+
   const prev = previousPeriodStats(records, 'month', now);
-  assert.equal(prev.count, 0);
-  const periodStats = computeStats(filterRecords(records, { month: '2026-10' }));
-  assert.equal(periodStats.count, 1);
+  // 9月整月三笔记录均被正确统计，而不是只统计 9-01 当天
+  assert.equal(prev.count, 3);
+  assert.equal(prev.received, 180);
+
+  // 跨年测试：2026-01-10 的上个月应为 2025-12-01 ~ 2025-12-31
+  const janNow = new Date('2026-01-10T12:00:00');
+  const crossYearRecords = [
+    sample({ id: 'dec-1', orderedAt: '2025-12-01', received: 10 }),
+    sample({ id: 'dec-31', orderedAt: '2025-12-31', received: 20 }),
+    sample({ id: 'nov-30', orderedAt: '2025-11-30', received: 30 })
+  ];
+  const decPrev = previousPeriodStats(crossYearRecords, 'month', janNow);
+  assert.equal(decPrev.count, 2);
+  assert.equal(decPrev.received, 30);
 });

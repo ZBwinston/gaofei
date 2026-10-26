@@ -94,8 +94,35 @@ test('pullRows 按服务器时间游标翻页', async () => {
   assert.equal(fetchImpl.calls.length, 2);
   assert.match(fetchImpl.calls[0].url, /limit=2/);
   assert.doesNotMatch(fetchImpl.calls[0].url, /server_updated_at=/);
-  assert.match(fetchImpl.calls[1].url, /server_updated_at=gt\.2025-01-02T00%3A00%3A00Z/);
+  assert.match(fetchImpl.calls[1].url, /server_updated_at=gte\.2025-01-02T00%3A00%3A00Z/);
   assert.equal(fetchImpl.calls[0].init.headers.Authorization, 'Bearer access-1');
+});
+
+test('pullRows 同一时间戳跨页时不丢单且自动去重', async () => {
+  const pages = [
+    {
+      body: [
+        { id: '1', server_updated_at: '2025-01-01T00:00:00Z' },
+        { id: '2', server_updated_at: '2025-01-01T00:00:00Z' }
+      ]
+    },
+    {
+      // 第2页由于 gte 包含了 id:2，同时带来了新记录 id:3
+      body: [
+        { id: '2', server_updated_at: '2025-01-01T00:00:00Z' },
+        { id: '3', server_updated_at: '2025-01-01T00:00:00Z' }
+      ]
+    },
+    { body: [] }
+  ];
+  let index = 0;
+  const fetchImpl = makeFetch(() => pages[index++]);
+  const client = clientWith(fetchImpl);
+  client.applyAuth(authPayload());
+
+  const rows = await client.pullRows('records', { cursor: '', limit: 2 });
+  assert.equal(rows.length, 3);
+  assert.deepEqual(rows.map(r => r.id), ['1', '2', '3']);
 });
 
 test('401 时自动 refresh 后重试一次', async () => {

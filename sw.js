@@ -1,7 +1,7 @@
 // 稿费记录 · Service Worker：离线可用 + 版本更新
 // 改了 app.js / styles.css / index.html 等前端文件后，把下面的版本号 +1 再推送，
 // 已安装的 App 才会拉取新文件并提示「有新版本」。
-const CACHE = 'gaofei-v3';
+const CACHE = 'gaofei-v4';
 const SHELL = [
   './',
   './index.html',

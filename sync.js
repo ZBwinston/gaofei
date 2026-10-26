@@ -313,20 +313,28 @@ export class CloudClient {
     }
   }
 
-  /** 增量拉取：按服务器时间游标翻页 */
+  /** 增量拉取：按服务器时间游标翻页，结合唯一键去重避免相同时间戳跨页遗漏 */
   async pullRows(table, { cursor = '', limit = 500 } = {}) {
     const rows = [];
+    const seenIds = new Set();
     let pageCursor = cursor;
     for (let page = 0; page < 50; page += 1) {
       const params = new URLSearchParams();
       params.set('select', '*');
       params.set('order', 'server_updated_at.asc,id.asc');
       params.set('limit', String(limit));
-      if (pageCursor) params.set('server_updated_at', `gt.${pageCursor}`);
+      if (pageCursor) {
+        const operator = page === 0 ? 'gt' : 'gte';
+        params.set('server_updated_at', `${operator}.${pageCursor}`);
+      }
       const batch = await this.rest(`/rest/v1/${table}?${params.toString()}`);
       if (!Array.isArray(batch) || batch.length === 0) break;
-      rows.push(...batch);
-      if (batch.length < limit) break;
+      const uniqueItems = batch.filter(row => !seenIds.has(row.id));
+      uniqueItems.forEach(row => {
+        seenIds.add(row.id);
+        rows.push(row);
+      });
+      if (batch.length < limit || uniqueItems.length === 0) break;
       pageCursor = batch[batch.length - 1].server_updated_at;
     }
     return rows;
@@ -360,18 +368,21 @@ export class CloudClient {
 /** 一次完整同步：先拉后推，返回合并后的本地状态 */
 export async function syncOnce({ client, state, onStage = () => {} }) {
   await client.ensureSession();
-  const cursor = state.sync.lastPulledServerAt || '';
+  const recordsCursor = state.sync.recordsCursor || state.sync.lastPulledServerAt || '';
+  const platformsCursor = state.sync.platformsCursor || state.sync.lastPulledServerAt || '';
 
   onStage('pull');
   const [recordRows, platformRows] = await Promise.all([
-    client.pullRows('records', { cursor }),
-    client.pullRows('platforms', { cursor })
+    client.pullRows('records', { cursor: recordsCursor }),
+    client.pullRows('platforms', { cursor: platformsCursor })
   ]);
-  const cursors = [
-    recordRows.at(-1)?.server_updated_at,
-    platformRows.at(-1)?.server_updated_at
-  ].filter(Boolean).sort();
-  const nextCursor = cursors.length ? cursors[cursors.length - 1] : cursor;
+
+  const nextRecordsCursor = recordRows.length
+    ? recordRows[recordRows.length - 1].server_updated_at
+    : recordsCursor;
+  const nextPlatformsCursor = platformRows.length
+    ? platformRows[platformRows.length - 1].server_updated_at
+    : platformsCursor;
 
   const merged = mergeRecords(state.records, recordRows, state.sync.dirty);
   const platforms = mergePlatforms(state.platforms, platformRows);
@@ -384,22 +395,17 @@ export async function syncOnce({ client, state, onStage = () => {} }) {
     ? await client.upsertRows('platforms', platforms.map(toRemotePlatform))
     : 0;
 
-  // 推送成功后把游标推到服务器当下，避免下一次同步再次全量拉取
-  let cursorAfter = nextCursor;
-  if (pushedRecords || pushedPlatforms) {
-    const [recordTime, platformTime] = await Promise.all([
-      client.latestServerTime('records'),
-      client.latestServerTime('platforms')
-    ]);
-    cursorAfter = [nextCursor, recordTime, platformTime].filter(Boolean).sort().pop() || nextCursor;
-  }
+  // 游标严格以实际拉取到的最新记录为准，杜绝并发推移导致的漏单
+  const overallCursor = [nextRecordsCursor, nextPlatformsCursor].filter(Boolean).sort().pop() || '';
 
   return {
     records: merged.records,
     platforms,
     dirty: [],
     platformDirty: false,
-    cursor: cursorAfter,
+    cursor: overallCursor,
+    recordsCursor: nextRecordsCursor,
+    platformsCursor: nextPlatformsCursor,
     pushed: pushedRecords,
     pushedPlatforms,
     added: merged.added,
