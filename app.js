@@ -830,7 +830,8 @@ function openRecordForm(record = null) {
     orderNo: base.orderNo || '',
     externalId: base.externalId || '',
     commissionText: record ? String(base.commission ?? '') : '',
-    receivedText: record && base.received !== null ? String(base.received) : '',
+    // 之前按「全额自动」算出来的到手不要预填，否则改了佣金后到手会被冻结成旧值
+    receivedText: record && base.received !== null && !base.receivedInferred ? String(base.received) : '',
     note: base.note || '',
     createdAt: base.createdAt,
     source: base.source || null,
